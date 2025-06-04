@@ -1,0 +1,22 @@
+{
+  "name": "messenger-bot",
+  "version": "1.0.0",
+  "description": "Facebook Messenger Bot using ws3-fca",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "ws3-fca": "^2.0.1"
+  },
+  "keywords": [
+    "facebook",
+    "messenger",
+    "bot",
+    "ws3-fca"
+  ],
+  "author": "",
+  "license": "MIT"
+}
