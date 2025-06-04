@@ -70,7 +70,7 @@ if (!fs.existsSync(cmdDir)) {
                     const commandModule = require(path.join(cmdDir, file));
                     if (commandModule && typeof commandModule.run === 'function') {
                         commands.set(commandName, commandModule);
-                        console.log(`Loaded command: ${commandName}`);
+                        console.log(`Loaded command: ${commandName}${commandModule.admin_only ? ' (Admin Only)' : ''}`);
                     } else {
                         console.warn(`Command ${commandName} in ${file} is missing a 'run' function or module is invalid.`);
                     }
@@ -208,6 +208,18 @@ fca.login(appState, (err, fbApi) => {
 
             if (commandName && commands.has(commandName)) {
                 const command = commands.get(commandName);
+                
+                if (command.admin_only === true) {
+                    if (!config.admin_id) {
+                        console.warn(`Command "${commandName}" requires admin permission but no admin_id is configured in config.json`);
+                        return api.sendMessage("⚠️ Admin system not configured. Please contact the bot administrator.", event.threadID || event.senderID);
+                    }
+                    
+                    if (event.senderID !== config.admin_id) {
+                        return api.sendMessage("🚫 Access Denied: This command is restricted to administrators only.", event.threadID || event.senderID);
+                    }
+                }
+                
                 try {
                     const targetThreadID = event.threadID || event.senderID;
                     const enhancedEvent = {

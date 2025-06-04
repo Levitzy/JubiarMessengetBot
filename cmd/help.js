@@ -1,10 +1,12 @@
 const fs = require("fs");
 const path = require("path");
+const { admin_only } = require("./growagarden");
 
 module.exports = {
     name: "help",
     description: "Shows all available commands or detailed info about a specific command",
     usage: "help [command_name]",
+    admin_only: false,
     
     run: async ({ api, event, args, config, commands }) => {
         const { threadID } = event;

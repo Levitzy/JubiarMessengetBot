@@ -7,6 +7,7 @@ module.exports = {
     description: "Track Grow A Garden stock + weather every 30s (sends updates every 30s)",
     usage: "growagarden on | off | status",
     aliases: ["gag", "gagstock"],
+    admin_only: true,
     
     run: async ({ api, event, args, config, commands }) => {
         const { threadID, senderID } = event;
