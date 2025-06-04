@@ -1,6 +1,11 @@
 const fca = require("ws3-fca");
 const fs = require("fs");
 const path = require("path");
+const express = require("express");
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 let config;
 const configPath = path.join(__dirname, "config.json");
@@ -79,8 +84,60 @@ if (!fs.existsSync(cmdDir)) {
     }
 }
 
+let api = null;
+
+app.get('/', (req, res) => {
+    res.json({
+        status: 'online',
+        bot_logged_in: !!api,
+        commands_loaded: commands.size,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/status', (req, res) => {
+    res.json({
+        bot_status: api ? 'connected' : 'disconnected',
+        user_id: api ? api.getCurrentUserID() : null,
+        commands: Array.from(commands.keys()),
+        config_loaded: !!config
+    });
+});
+
+app.post('/send-message', (req, res) => {
+    if (!api) {
+        return res.status(503).json({ error: 'Bot not logged in' });
+    }
+    
+    const { threadID, message } = req.body;
+    if (!threadID || !message) {
+        return res.status(400).json({ error: 'threadID and message are required' });
+    }
+    
+    api.sendMessage(message, threadID, (err, messageInfo) => {
+        if (err) {
+            return res.status(500).json({ error: 'Failed to send message', details: err });
+        }
+        res.json({ success: true, messageInfo });
+    });
+});
+
+app.get('/commands', (req, res) => {
+    res.json({
+        commands: Array.from(commands.keys()),
+        total: commands.size
+    });
+});
+
+const PORT = 5000;
+const HOST = '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+    console.log(`Express server running on http://${HOST}:${PORT}`);
+});
+
 console.log("Attempting to log in...");
-fca.login(appState, (err, api) => {
+fca.login(appState, (err, fbApi) => {
     if (err) {
         if (err.error === 'login-approval' || (err.message && err.message.includes("login approval"))) {
             console.error("LOGIN APPROVAL NEEDED: Please check your Facebook account for a login approval request. You might need to approve it from a recognized device or browser. After approving, try running the bot again.");
@@ -93,6 +150,7 @@ fca.login(appState, (err, api) => {
         return process.exit(1);
     }
 
+    api = fbApi;
     console.log("Logged in successfully as", api.getCurrentUserID());
     try {
         fs.writeFileSync(appStatePath, JSON.stringify(api.getAppState(), null, 2), 'utf8');
