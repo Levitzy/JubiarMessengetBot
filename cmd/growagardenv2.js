@@ -4,7 +4,7 @@ const activeSessions = new Map();
 
 module.exports = {
     name: "growagardenv2",
-    description: "Track Grow A Garden stock + weather every 30s using official growagarden.gg API",
+    description: "Track Grow A Garden stock + weather 5s before gear/seeds resets (every 5min)",
     usage: "growagardenv2 on | off | status",
     aliases: ["gagv2", "gagstock2"],
     admin_only: true,
@@ -13,10 +13,29 @@ module.exports = {
         const { threadID, senderID } = event;
         const action = args[0]?.toLowerCase();
 
+        const getMillisecondsUntilGearReset = () => {
+            const now = Date.now();
+            const nowDate = new Date(now);
+            const currentMinutes = nowDate.getMinutes();
+            const currentSeconds = nowDate.getSeconds();
+            const currentMs = nowDate.getMilliseconds();
+            
+            const totalCurrentSeconds = (currentMinutes * 60) + currentSeconds;
+            const resetIntervalSeconds = 5 * 60;
+            
+            const secondsSinceLastReset = totalCurrentSeconds % resetIntervalSeconds;
+            const secondsUntilNextReset = resetIntervalSeconds - secondsSinceLastReset;
+            
+            const msUntilReset = (secondsUntilNextReset * 1000) - currentMs;
+            const afterResetMs = msUntilReset + 1000;
+            
+            return afterResetMs;
+        };
+
         if (action === "off") {
             const session = activeSessions.get(senderID);
             if (session) {
-                clearInterval(session.interval);
+                clearTimeout(session.timeout);
                 const runningTime = Math.floor((Date.now() - session.startTime) / 1000 / 60);
                 const updateCount = session.updateCount || 0;
                 activeSessions.delete(senderID);
@@ -31,29 +50,48 @@ module.exports = {
             if (session) {
                 const runningTime = Math.floor((Date.now() - session.startTime) / 1000 / 60);
                 const updateCount = session.updateCount || 0;
-                const nextCheck = 30 - (Math.floor(Date.now() / 1000) % 30);
-                return api.sendMessage(`📊 V2 Tracking Status: ACTIVE ✅\n\n⏱️ Running for: ${runningTime} minutes\n📈 Updates sent: ${updateCount}\n🔄 Next update: ${nextCheck}s\n\nUse 'growagardenv2 off' to stop`, threadID);
+                const nextResetMs = getMillisecondsUntilGearReset();
+                const nextResetMinutes = Math.floor(nextResetMs / 60000);
+                const nextResetSeconds = Math.floor((nextResetMs % 60000) / 1000);
+                return api.sendMessage(`📊 V2 Tracking Status: ACTIVE ✅\n\n⏱️ Running for: ${runningTime} minutes\n📈 Updates sent: ${updateCount}\n🔄 Next update: ${nextResetMinutes}m ${nextResetSeconds}s (5s before gear reset)\n\nUse 'growagardenv2 off' to stop`, threadID);
             } else {
                 return api.sendMessage("❌ No active V2 tracking session.\n\nUse 'growagardenv2 on' to start tracking", threadID);
             }
         }
 
         if (action !== "on") {
-            return api.sendMessage("📌 Usage:\n• `growagardenv2 on` - Start auto tracking\n• `growagardenv2 off` - Stop tracking\n• `growagardenv2 status` - Check status\n\n⚡ Uses official growagarden.gg API!", threadID);
+            return api.sendMessage("📌 Usage:\n• `growagardenv2 on` - Start auto tracking\n• `growagardenv2 off` - Stop tracking\n• `growagardenv2 status` - Check status\n\n⚡ Updates 5s before gear/seeds resets (5min)!", threadID);
         }
 
         if (activeSessions.has(senderID)) {
             return api.sendMessage("📡 You're already tracking Grow A Garden V2. Use `growagardenv2 off` to stop.", threadID);
         }
 
-        api.sendMessage("✅ Grow A Garden V2 auto-tracking started!\n\n🔄 Will send updates every 30 seconds\n🌐 Using official growagarden.gg API\n⏰ Reset times: Gear/Seeds (5min) | Eggs (30min) | Cosmetics (4h) | Honey (1h)\n🍯 Now includes: Honey, Night & Blood stocks!\n\n⚡ First update coming in 5 seconds...", threadID);
+        const nextResetMs = getMillisecondsUntilGearReset();
+        const nextResetMinutes = Math.floor(nextResetMs / 60000);
+        const nextResetSeconds = Math.floor((nextResetMs % 60000) / 1000);
+        
+        api.sendMessage(`✅ Grow A Garden V2 auto-tracking started!\n\n🔄 Updates 5s before gear/seeds resets (every 5min)\n🌐 Using official growagarden.gg API\n⏰ Reset times: Gear/Seeds (5min) | Eggs (30min) | Cosmetics (4h) | Honey (1h)\n🍯 Now includes: Honey, Night & Blood stocks!\n\n⚡ Next update in ${nextResetMinutes}m ${nextResetSeconds}s (5s before reset)...`, threadID);
+
+        const scheduleNextUpdate = () => {
+            const session = activeSessions.get(senderID);
+            if (!session) return;
+            
+            const msUntilReset = getMillisecondsUntilGearReset();
+                            console.log(`[${new Date().toISOString()}] Scheduling next update in ${Math.floor(msUntilReset / 1000)}s (5s before gear reset) for user ${senderID}`);
+            
+            session.timeout = setTimeout(() => {
+                fetchAll();
+                scheduleNextUpdate();
+            }, msUntilReset);
+        };
 
         const fetchAll = async () => {
             try {
                 const session = activeSessions.get(senderID);
                 if (!session) return;
 
-                console.log(`[${new Date().toISOString()}] Fetching V2 data for user ${senderID}...`);
+                console.log(`[${new Date().toISOString()}] Fetching V2 data for user ${senderID} - 5s before gear reset...`);
 
                 const stockRes = await axios.get("https://growagarden.gg/api/ws/stocks.getAll?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%2C%22meta%22%3A%7B%22values%22%3A%5B%22undefined%22%5D%7D%7D%7D", {
                     timeout: 15000,
@@ -200,7 +238,7 @@ module.exports = {
                                  (stockData.bloodStock?.length || 0) +
                                  (stockData.honeyStock?.length || 0);
 
-                const message = `🌾 𝗚𝗿𝗼𝘄 𝗔 𝗚𝗮𝗿𝗱𝗲𝗻 𝗩𝟮 — 𝗔𝘂𝘁𝗼 𝗨𝗽𝗱𝗮𝘁𝗲 #${updateCount} 📊 ${totalItems} items\n\n` +
+                const message = `🌾 𝗚𝗿𝗼𝘄 𝗔 𝗚𝗮𝗿𝗱𝗲𝗻 𝗩𝟮 — 𝗘𝗮𝗿𝗹𝘆 𝗥𝗲𝘀𝗲𝘁 𝗨𝗽𝗱𝗮𝘁𝗲 #${updateCount} 📊 ${totalItems} items\n\n` +
                     `🛠️ 𝗚𝗲𝗮𝗿:\n${formatStockList(stockData.gearStock, "gear")}\n\n` +
                     `🌱 𝗦𝗲𝗲𝗱𝘀:\n${formatStockList(stockData.seedsStock, "seeds")}\n\n` +
                     `🥚 𝗘𝗴𝗴𝘀:\n${formatStockList(stockData.eggStock, "eggs")}\n\n` +
@@ -216,10 +254,10 @@ module.exports = {
                     `🍯 𝗛𝗼𝗻𝗲𝘆: ${honeyResetText}\n\n` +
                     `📊 𝗜𝗡𝗙𝗢:\n` +
                     `⏰ Running: ${runningTime}min | Update #${updateCount}\n` +
-                    `🔄 Next update: 30s | 'growagardenv2 off' to stop\n` +
+                    `🔄 Next update: ${gearResetText} (5s before gear reset) | 'growagardenv2 off' to stop\n` +
                     `🌐 API: growagarden.gg (Official)`;
 
-                console.log(`[${new Date().toISOString()}] Sending V2 update #${updateCount} to user ${senderID}`);
+                console.log(`[${new Date().toISOString()}] Sending V2 gear reset update #${updateCount} to user ${senderID}`);
                 console.log("Available Stock Types:", Object.keys(stockData || {}));
                 console.log("Weather Values:", { current: currentWeather, bonus: cropBonuses, icon: weatherIcon });
                 api.sendMessage(message, threadID);
@@ -230,18 +268,21 @@ module.exports = {
                 const session = activeSessions.get(senderID);
                 if (session) {
                     session.updateCount = (session.updateCount || 0) + 1;
-                    api.sendMessage(`🚨 V2 Update #${session.updateCount} - API Error!\n\n❌ Could not fetch latest data from growagarden.gg\n⚠️ Official API might be down temporarily\n\n🔄 Will retry in 30 seconds...\n\nUse 'growagardenv2 off' to stop if needed`, threadID);
+                    const nextResetMs = getMillisecondsUntilGearReset();
+                    const nextResetMinutes = Math.floor(nextResetMs / 60000);
+                    const nextResetSeconds = Math.floor((nextResetMs % 60000) / 1000);
+                    api.sendMessage(`🚨 V2 Update #${session.updateCount} - API Error!\n\n❌ Could not fetch latest data from growagarden.gg\n⚠️ Official API might be down temporarily\n\n🔄 Will retry 5s before next gear reset in ${nextResetMinutes}m ${nextResetSeconds}s...\n\nUse 'growagardenv2 off' to stop if needed`, threadID);
                 }
             }
         };
 
-        const interval = setInterval(fetchAll, 30 * 1000);
         activeSessions.set(senderID, { 
-            interval, 
+            timeout: null, 
             startTime: Date.now(),
             updateCount: 0 
         });
 
-        setTimeout(() => fetchAll(), 5000);
+        scheduleNextUpdate();
+        setTimeout(() => fetchAll(), 3000);
     }
 };
