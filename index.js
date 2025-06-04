@@ -151,10 +151,18 @@ fca.login(appState, (err, api) => {
             if (commandName && commands.has(commandName)) {
                 const command = commands.get(commandName);
                 try {
-                    command.run({ api, event, args, config, commands });
+                    const targetThreadID = event.threadID || event.senderID;
+                    const enhancedEvent = {
+                        ...event,
+                        threadID: targetThreadID,
+                        isGroup: event.isGroup || (event.threadID && event.threadID.length > 15)
+                    };
+                    
+                    command.run({ api, event: enhancedEvent, args, config, commands });
                 } catch (cmdErr) {
                     console.error(`Error executing command ${commandName}:`, cmdErr);
-                    api.sendMessage(`An error occurred while running the command: ${commandName}. Check server logs.`, event.threadID);
+                    const errorThreadID = event.threadID || event.senderID;
+                    api.sendMessage(`An error occurred while running the command: ${commandName}. Check server logs.`, errorThreadID);
                 }
             }
         }
